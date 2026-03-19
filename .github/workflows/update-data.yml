@@ -1,0 +1,32 @@
+name: Update Dashboard Data
+
+on:
+  schedule:
+    # Every Monday at 6:00 AM UTC (1:00 AM Eastern)
+    - cron: '0 6 * * 1'
+  workflow_dispatch:  # Allow manual trigger from GitHub UI
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install pandas plotly requests
+
+      - name: Build static dashboard
+        run: python build.py
+
+      - name: Commit and push if changed
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: 'Update dashboard data'
+          file_pattern: 'docs/*'

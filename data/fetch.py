@@ -10,7 +10,11 @@ from pathlib import Path
 
 import pandas as pd
 import requests
-import streamlit as st
+
+try:
+    import streamlit as st
+except ImportError:
+    st = None
 
 from data.constants import BLS_BASE_URL, COUNTIES, YEARS, QUARTERS
 
@@ -21,9 +25,19 @@ CACHE_FILE = CACHE_DIR / "qcew_data.parquet"
 def _fetch_from_bls() -> pd.DataFrame:
     """Fetch all county-quarter CSVs from BLS and return a consolidated DataFrame."""
     frames = []
-    progress = st.progress(0, text="Fetching data from BLS...")
     total = len(COUNTIES) * len(YEARS) * len(QUARTERS)
     done = 0
+
+    # Use Streamlit progress bar if available, otherwise print to console
+    use_st = False
+    if st is not None:
+        try:
+            progress = st.progress(0, text="Fetching data from BLS...")
+            use_st = True
+        except Exception:
+            pass
+    if not use_st:
+        print("Fetching data from BLS...", flush=True)
 
     for fips in COUNTIES:
         for year in YEARS:
@@ -38,13 +52,23 @@ def _fetch_from_bls() -> pd.DataFrame:
                 except Exception:
                     pass
                 done += 1
-                progress.progress(done / total,
-                                  text=f"Fetching data from BLS... ({done}/{total})")
+                if use_st:
+                    progress.progress(done / total,
+                                      text=f"Fetching data from BLS... ({done}/{total})")
+                else:
+                    print(f"\r  {done}/{total}", end="", flush=True)
 
-    progress.empty()
+    if use_st:
+        progress.empty()
+    else:
+        print()
 
     if not frames:
-        st.error("No data could be fetched from BLS. Please try again later.")
+        msg = "No data could be fetched from BLS. Please try again later."
+        if use_st:
+            st.error(msg)
+        else:
+            print(f"ERROR: {msg}")
         return pd.DataFrame()
 
     return pd.concat(frames, ignore_index=True)
