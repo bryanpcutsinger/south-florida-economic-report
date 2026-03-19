@@ -1,0 +1,299 @@
+"""
+South Florida Regional Economic Report
+Built with Streamlit + Plotly using BLS QCEW data.
+Covers Palm Beach, Broward, and Miami-Dade counties.
+"""
+import streamlit as st
+import pandas as pd
+
+from data.fetch import fetch_all_data
+from data.clean import clean, get_total_covered, get_latest_quarter
+from data.constants import FAU_BLUE, FAU_RED, FAU_DARK_GRAY, FAU_GRAY, FAU_ELECTRIC_BLUE, FAU_SKY_BLUE, COUNTY_COLORS
+from utils.formatting import fmt_number, fmt_currency
+from utils.narratives import source_citation
+
+from components.employment_trends import render as render_trends
+from components.industry_treemap import render as render_treemap
+from components.wage_landscape import render as render_wages
+from components.industry_growth import render as render_growth
+from components.wage_employment_scatter import render as render_scatter
+from components.establishment_churn import render as render_churn
+from components.wage_premium import render as render_premium
+from components.location_quotients import render as render_lq
+from components.concentration import render as render_concentration
+
+# ── Page config ───────────────────────────────────────────────────────────────
+st.set_page_config(
+    page_title="South Florida Regional Economic Report",
+    page_icon=":chart_with_upwards_trend:",
+    layout="wide",
+)
+
+# ── FAU Theme CSS ─────────────────────────────────────────────────────────────
+st.markdown(f"""
+<style>
+    /* White background throughout */
+    .stApp {{
+        background-color: #FFFFFF;
+    }}
+    section[data-testid="stSidebar"] {{
+        background-color: #F8F9FA;
+    }}
+
+    /* Header styling */
+    .main-title {{
+        color: {FAU_BLUE};
+        font-size: 2.2rem;
+        font-weight: 700;
+        margin-bottom: 0;
+        padding-bottom: 0;
+    }}
+    .main-subtitle {{
+        color: {FAU_DARK_GRAY};
+        font-size: 1.0rem;
+        margin-top: 0;
+    }}
+
+    /* County snapshot cards */
+    .county-card {{
+        background: linear-gradient(135deg, #F8F9FA 0%, #FFFFFF 100%);
+        border-radius: 12px;
+        padding: 1.5rem;
+        border-left: 5px solid;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        margin-bottom: 1rem;
+    }}
+    .county-card h3 {{
+        margin: 0 0 0.8rem 0;
+        font-size: 1.3rem;
+    }}
+    .kpi-row {{
+        display: flex;
+        justify-content: space-between;
+        gap: 0.8rem;
+    }}
+    .kpi-item {{
+        flex: 1;
+        text-align: center;
+    }}
+    .kpi-label {{
+        font-size: 0.75rem;
+        color: {FAU_DARK_GRAY};
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 0.2rem;
+    }}
+    .kpi-value {{
+        font-size: 1.4rem;
+        font-weight: 700;
+        color: {FAU_BLUE};
+    }}
+    .kpi-delta {{
+        font-size: 0.8rem;
+        margin-top: 0.1rem;
+    }}
+    .kpi-delta.positive {{
+        color: #2E7D32;
+    }}
+    .kpi-delta.negative {{
+        color: {FAU_RED};
+    }}
+
+    /* Data quarter badge */
+    .data-badge {{
+        display: inline-block;
+        background-color: {FAU_SKY_BLUE};
+        color: {FAU_BLUE};
+        padding: 0.25rem 0.75rem;
+        border-radius: 20px;
+        font-size: 0.85rem;
+        font-weight: 500;
+        margin-bottom: 1.5rem;
+    }}
+
+    /* Tab styling */
+    .stTabs [data-baseweb="tab-list"] {{
+        gap: 0;
+        border-bottom: 2px solid {FAU_GRAY};
+    }}
+    .stTabs [data-baseweb="tab"] {{
+        padding: 0.75rem 1.5rem;
+        font-weight: 500;
+        color: {FAU_DARK_GRAY};
+    }}
+    .stTabs [aria-selected="true"] {{
+        border-bottom: 3px solid {FAU_BLUE};
+        color: {FAU_BLUE};
+    }}
+
+    /* Make all Streamlit text dark on white */
+    .stMarkdown, .stMetric, .stCaption, p, span, label {{
+        color: {FAU_DARK_GRAY};
+    }}
+    h1, h2, h3, h4, h5, h6 {{
+        color: {FAU_BLUE} !important;
+    }}
+
+    /* Override Streamlit metric styling */
+    [data-testid="stMetricValue"] {{
+        color: {FAU_BLUE};
+    }}
+    [data-testid="stMetricLabel"] {{
+        color: {FAU_DARK_GRAY};
+    }}
+</style>
+""", unsafe_allow_html=True)
+
+# ── Title ─────────────────────────────────────────────────────────────────────
+st.markdown('<p class="main-title">South Florida Regional Economic Report</p>', unsafe_allow_html=True)
+st.markdown('<p class="main-subtitle">Quarterly Census of Employment and Wages (QCEW) &mdash; Palm Beach, Broward &amp; Miami-Dade Counties</p>', unsafe_allow_html=True)
+
+# ── Load and clean data ──────────────────────────────────────────────────────
+raw_df = fetch_all_data()
+if raw_df.empty:
+    st.info("Fetching data from BLS... please refresh the page in a moment.")
+    st.stop()
+
+df = clean(raw_df)
+
+# ── Regional Snapshot ─────────────────────────────────────────────────────────
+
+def _county_snapshot_card(county_df: pd.DataFrame, county_name: str, color: str):
+    """Render a styled KPI card for one county."""
+    totals = get_total_covered(county_df)
+    latest = get_latest_quarter(totals)
+
+    if latest.empty:
+        st.markdown(f"""
+        <div class="county-card" style="border-left-color: {color};">
+            <h3 style="color: {color};">{county_name} County</h3>
+            <p>No data available.</p>
+        </div>
+        """, unsafe_allow_html=True)
+        return
+
+    row = latest.iloc[0]
+    year, qtr = int(row["year"]), int(row["qtr"])
+
+    empl = fmt_number(row["employment"])
+    estabs = fmt_number(row["qtrly_estabs"])
+    wage = fmt_currency(row["avg_annual_wage"])
+
+    empl_pct = row.get("oty_month3_emplvl_pct_chg")
+    estab_pct = row.get("oty_qtrly_estabs_pct_chg")
+    wage_pct = row.get("oty_avg_wkly_wage_pct_chg")
+
+    def _delta_html(pct):
+        if pd.isna(pct):
+            return ""
+        css_class = "positive" if pct >= 0 else "negative"
+        arrow = "&#9650;" if pct >= 0 else "&#9660;"
+        return f'<div class="kpi-delta {css_class}">{arrow} {abs(pct):.1f}% YoY</div>'
+
+    st.markdown(f"""
+    <div class="county-card" style="border-left-color: {color};">
+        <h3 style="color: {color};">{county_name} County</h3>
+        <div class="kpi-row">
+            <div class="kpi-item">
+                <div class="kpi-label">Employment</div>
+                <div class="kpi-value">{empl}</div>
+                {_delta_html(empl_pct)}
+            </div>
+            <div class="kpi-item">
+                <div class="kpi-label">Establishments</div>
+                <div class="kpi-value">{estabs}</div>
+                {_delta_html(estab_pct)}
+            </div>
+            <div class="kpi-item">
+                <div class="kpi-label">Avg Annual Salary</div>
+                <div class="kpi-value">{wage}</div>
+                {_delta_html(wage_pct)}
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+# Show the data quarter badge
+sample_totals = get_total_covered(df)
+sample_latest = get_latest_quarter(sample_totals)
+if not sample_latest.empty:
+    sample_row = sample_latest.iloc[0]
+    st.markdown(f'<div class="data-badge">Data as of {int(sample_row["year"])} Q{int(sample_row["qtr"])}</div>', unsafe_allow_html=True)
+
+st.markdown("### Regional Snapshot")
+
+# 3 columns — one card per county
+county_order = ["Palm Beach", "Broward", "Miami-Dade"]
+cols = st.columns(3)
+for col, county_name in zip(cols, county_order):
+    with col:
+        county_df = df[df["county_name"] == county_name]
+        color = COUNTY_COLORS.get(county_name, FAU_BLUE)
+        _county_snapshot_card(county_df, county_name, color)
+
+# ── County Tabs ───────────────────────────────────────────────────────────────
+
+def _render_county_tab(county_df: pd.DataFrame, county_name: str):
+    """Render the full QCEW analysis for a single county."""
+    if county_df.empty:
+        st.warning(f"No data available for {county_name} County.")
+        return
+
+    # Employment Trends
+    render_trends(county_df)
+
+    # Industry Composition
+    st.divider()
+    render_treemap(county_df)
+
+    # Wage Landscape
+    st.divider()
+    render_wages(county_df)
+
+    # Industry Growth
+    st.divider()
+    render_growth(county_df)
+
+    # Wage–Employment Landscape
+    st.divider()
+    render_scatter(county_df)
+
+    # Establishment Dynamics
+    st.divider()
+    render_churn(county_df)
+
+    # Wage Premium Analysis
+    st.divider()
+    render_premium(county_df)
+
+    # Location Quotients
+    st.divider()
+    render_lq(county_df)
+
+    # Economic Concentration
+    st.divider()
+    render_concentration(county_df)
+
+
+st.divider()
+
+tab_palm, tab_broward, tab_miami = st.tabs([
+    "Palm Beach County",
+    "Broward County",
+    "Miami-Dade County",
+])
+
+with tab_palm:
+    _render_county_tab(df[df["county_name"] == "Palm Beach"], "Palm Beach")
+
+with tab_broward:
+    _render_county_tab(df[df["county_name"] == "Broward"], "Broward")
+
+with tab_miami:
+    _render_county_tab(df[df["county_name"] == "Miami-Dade"], "Miami-Dade")
+
+# ── Footer ────────────────────────────────────────────────────────────────────
+st.divider()
+st.caption(
+    source_citation("BLS QCEW", "https://www.bls.gov/cew/", "Quarterly")
+)
