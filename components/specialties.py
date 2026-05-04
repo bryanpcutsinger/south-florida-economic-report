@@ -5,7 +5,6 @@ Bars colored by LQ band (≥1.25 / 1.0–1.25 / <1.0) to teach the threshold vis
 from __future__ import annotations
 
 import plotly.graph_objects as go
-import streamlit as st
 import pandas as pd
 
 from data.clean import get_specialties_data
@@ -93,6 +92,8 @@ def build_figure(plot_data: pd.DataFrame) -> go.Figure:
 
 def render(df: pd.DataFrame):
     """Industry Specialization — top sectors by employment LQ with FAU bands."""
+    import streamlit as st
+
     st.header("Industry Specialization")
 
     plot_data = get_specialties_data(df)

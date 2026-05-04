@@ -4,7 +4,6 @@ Employment and salary trend lines — quarterly raw + STL trend overlay.
 from __future__ import annotations
 
 import plotly.graph_objects as go
-import streamlit as st
 import pandas as pd
 
 from data.analysis import deseasonalize_trend, project_trend
@@ -126,6 +125,8 @@ def _build_chart(
 
 def render(df: pd.DataFrame):
     """Render quarterly employment and salary trend charts for a single county."""
+    import streamlit as st
+
     st.header("Employment & Salary Trends")
 
     totals = get_total_covered(df).sort_values("date")

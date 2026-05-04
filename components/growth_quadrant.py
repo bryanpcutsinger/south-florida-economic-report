@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import numpy as np
 import plotly.graph_objects as go
-import streamlit as st
 import pandas as pd
 
 from data.clean import get_growth_quadrant_data
@@ -131,6 +130,8 @@ def build_figure(plot_data: pd.DataFrame) -> go.Figure:
 
 def render(df: pd.DataFrame):
     """Quadrant scatter: industries placed by YoY employment vs salary growth."""
+    import streamlit as st
+
     st.header("Industry Landscape")
 
     plot_data = get_growth_quadrant_data(df)

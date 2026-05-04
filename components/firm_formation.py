@@ -8,7 +8,6 @@ rate rescaled to the county's establishment base for like-for-like comparison.
 from __future__ import annotations
 
 import plotly.graph_objects as go
-import streamlit as st
 import pandas as pd
 
 from data.clean import get_firm_formation_data, get_national_qoq_pct, get_total_covered
@@ -128,6 +127,8 @@ def _load_national_benchmark(df: pd.DataFrame):
 
 def render(df: pd.DataFrame):
     """Quarterly establishment churn with U.S. national benchmark overlay."""
+    import streamlit as st
+
     st.header("Firm Openings & Closings")
 
     plot_data = get_firm_formation_data(df)

@@ -11,7 +11,6 @@ the active snapshot in plain text.
 from __future__ import annotations
 
 import plotly.graph_objects as go
-import streamlit as st
 import pandas as pd
 
 from data.clean import get_treemap_snapshots
@@ -116,6 +115,8 @@ def build_figure(snapshots: list) -> go.Figure:
 
 def render(df: pd.DataFrame):
     """Workforce Composition treemap with year-selector buttons."""
+    import streamlit as st
+
     st.header("Workforce Composition")
 
     snapshots = get_treemap_snapshots(df)
