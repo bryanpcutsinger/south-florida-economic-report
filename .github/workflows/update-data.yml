@@ -13,20 +13,24 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: requirements-build.txt
 
       - name: Install dependencies
-        run: pip install pandas plotly requests
+        run: pip install -r requirements-build.txt
 
       - name: Build static dashboard
+        env:
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
         run: python build.py
 
       - name: Commit and push if changed
-        uses: stefanzweifel/git-auto-commit-action@v5
+        uses: stefanzweifel/git-auto-commit-action@v7
         with:
           commit_message: 'Update dashboard data'
           file_pattern: 'docs/*'
