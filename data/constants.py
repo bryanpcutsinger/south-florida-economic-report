@@ -36,6 +36,37 @@ COUNTY_COLORS = {
     "Miami-Dade": FAU_ELECTRIC_BLUE,
 }
 
+# Industry → FAU palette color, grouped by broad domain. Used by the Growth
+# Quadrant chart, which colors bubbles by domain rather than by county.
+INDUSTRY_DOMAIN_COLORS = {
+    # Goods-producing
+    "Agriculture":                       FAU_RED,
+    "Mining":                            FAU_RED,
+    "Utilities":                         FAU_RED,
+    "Construction":                      FAU_RED,
+    "Manufacturing":                     FAU_RED,
+    # Trade & Logistics
+    "Wholesale Trade":                   FAU_SAND,
+    "Retail Trade":                      FAU_SAND,
+    "Transportation & Warehousing":      FAU_SAND,
+    # Information & Finance
+    "Information":                       FAU_BLUE,
+    "Finance & Insurance":               FAU_BLUE,
+    "Real Estate":                       FAU_BLUE,
+    # Professional & Business
+    "Professional & Technical Services": FAU_ELECTRIC_BLUE,
+    "Management of Companies":           FAU_ELECTRIC_BLUE,
+    "Admin & Waste Services":            FAU_ELECTRIC_BLUE,
+    # Education & Health
+    "Educational Services":              FAU_STONE,
+    "Health Care & Social Assistance":   FAU_STONE,
+    # Leisure & Other
+    "Arts & Entertainment":              FAU_DARK_GRAY,
+    "Accommodation & Food Services":     FAU_DARK_GRAY,
+    "Other Services":                    FAU_DARK_GRAY,
+    "Public Administration":             FAU_DARK_GRAY,
+}
+
 # ── Aggregation levels ────────────────────────────────────────────────────────
 # 70 = Total, all industries (own_code 0 only)
 # 71 = Total, all industries by ownership
@@ -46,7 +77,35 @@ COUNTY_COLORS = {
 # 76 = NAICS 4-digit
 # 77 = NAICS 5-digit
 # 78 = NAICS 6-digit
-AGGLVL_TOTAL = 70          # Total covered, own_code=0
+AGGLVL_US_TOTAL = 10       # U.S. national total (only valid for area_fips=US000)
+
+
+# ── External (non-QCEW) data sources ─────────────────────────────────────────
+# These power the second row of metrics on each county's KPI card.
+
+FRED_API_BASE = "https://api.stlouisfed.org/fred"
+
+# Real GDP series (annual, thousands of chained 2017 dollars). FIPS-derivable.
+FRED_GDP_SERIES = {
+    "Palm Beach": "REALGDPALL12099",
+    "Broward":    "REALGDPALL12011",
+    "Miami-Dade": "REALGDPALL12086",
+}
+
+# Unemployment rate series (monthly %, NSA). IDs are NOT derivable from FIPS —
+# verified manually via FRED search. Bump if any series ID is renamed.
+FRED_UNRATE_SERIES = {
+    "Palm Beach": "FLPALM2URN",
+    "Broward":    "FLBROW5URN",
+    "Miami-Dade": "FLMIAM6URN",
+}
+
+# IRS Statistics of Income county-to-county migration data. Year pair is the
+# tax-year transition (e.g., "2223" = 2022→2023 flows). Bump explicitly when
+# IRS publishes a newer year so the version change is visible in git.
+IRS_SOI_BASE_URL = "https://www.irs.gov/pub/irs-soi"
+LATEST_IRS_YEAR_PAIR = "2223"
+AGGLVL_TOTAL = 70          # Single-area total covered, own_code=0
 AGGLVL_TOTAL_BY_OWN = 71   # Total by ownership
 AGGLVL_SUPERSECTOR = 72    # Supersector by ownership
 AGGLVL_NAICS_SECTOR = 74   # 2-digit NAICS sector by ownership

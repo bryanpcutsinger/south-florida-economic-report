@@ -10,47 +10,41 @@ app.py                          # Main Streamlit app — regional snapshot + 3 c
 data/
   constants.py                  # FIPS codes (3 counties), NAICS labels, aggregation levels, FAU color palette
   clean.py                      # QCEW cleaning pipeline + filtering helpers
-  analysis.py                   # HHI concentration index computation
-  fetch.py                      # QCEW data fetch (BLS CSV API) — parquet cached to data/cache/
-  cache/                        # Parquet cache — first load fetches all 3 counties, then reads from disk
+  analysis.py                   # STL trend decomposition + linear 2Q projection (deseasonalize_trend, project_trend)
+  fetch.py                      # QCEW data fetch (BLS CSV API) — county + national caches in data/cache/
+  fetch_fred.py                 # FRED API client — county real GDP + unemployment rate (powers KPI secondary row)
+  fetch_irs_migration.py        # IRS SOI migration fetcher — net domestic migration per county (KPI secondary row)
+  cache/                        # Parquet caches — qcew_data.parquet, qcew_national.parquet, qcew_fred_gdp.parquet, qcew_fred_unrate.parquet, qcew_irs_migration.parquet
 components/
-  employment_trends.py          # Side-by-side line charts — total employment + avg annual wage over time
-  industry_treemap.py           # Treemap — 2-digit NAICS sectors, size=employment, color=avg wage
-  wage_landscape.py             # Horizontal bars — sectors ranked by avg annual wage
-  industry_growth.py            # Side-by-side diverging bars — YoY employment + wage growth by sector
-  wage_employment_scatter.py    # Scatter — x=employment, y=avg wage, size=establishments
-  establishment_churn.py        # Side-by-side diverging bars — net establishment change (absolute + %)
-  wage_premium.py               # Scatter — employment LQ vs wage LQ with quadrant labels
-  location_quotients.py         # Diverging horizontal bars — employment LQ by sector
-  concentration.py              # HHI line chart over time with reference bands
+  employment_trends.py          # Side-by-side line charts — raw + STL trend + 2-quarter linear projection for employment and salary
+  growth_quadrant.py            # Industry Landscape — YoY employment × YoY wage growth; bubbles colored by industry domain (not county); 4 tinted quadrants
+  firm_formation.py             # Firm Openings & Closings — quarterly establishment churn aggregated from industry-level QoQ deltas
+  specialties.py                # Industry Specialization — horizontal LQ bars with FAU-band coloring (≥1.25 blue, 1.0–1.25 stone, <1.0 gray)
+  employment_treemap.py         # Workforce Composition — treemap of private employment by NAICS sector, colored by FAU industry domain
 utils/
   formatting.py                 # fmt_number, fmt_currency, fmt_pct
-  narratives.py                 # source_citation(), narrate_employment_trends(), narrate_wage_distribution()
+  narratives.py                 # source_citation(), narrate_employment_trends(), format_industry_list()
 ```
 
 ## Dashboard Layout
 
 ### Main Page — Regional Snapshot
 - Title and subtitle with data quarter badge
-- 3 styled KPI cards (one per county) showing:
-  - Total Employment with YoY % change
-  - Establishments with YoY % change
-  - Average Annual Salary with YoY % change
+- 3 styled KPI cards (one per county), each showing two rows:
+  - Primary (QCEW): Total Employment, Establishments, Average Salary — all with YoY % change.
+  - Secondary: Real GDP ($B + YoY %), Unemployment rate (% + YoY pp delta, sign-inverted so falling = green), Net Migration (signed integer, IRS SOI tax-year flow, no arrow). Each cell labels its data period in small gray text.
+- Secondary row reads "—" gracefully if `FRED_API_KEY` env var is missing or any fetch fails; primary row is unaffected.
 
 ### County Tabs (Palm Beach | Broward | Miami-Dade)
-Each tab renders 9 sections for that county:
+Each tab renders 5 sections for that county:
 
 | # | Section | Component | Chart Type |
 |---|---------|-----------|------------|
-| 1 | Employment Trends | `employment_trends.py` | Side-by-side line charts |
-| 2 | Industry Composition | `industry_treemap.py` | Treemap — 2-digit NAICS |
-| 3 | Wage Landscape | `wage_landscape.py` | Horizontal bars by wage |
-| 4 | Industry Growth | `industry_growth.py` | Diverging bars (employment + wage YoY %) |
-| 5 | Wage–Employment Landscape | `wage_employment_scatter.py` | Scatter with quadrant lines |
-| 6 | Establishment Dynamics | `establishment_churn.py` | Diverging bars (absolute + %) |
-| 7 | Wage Premium Analysis | `wage_premium.py` | LQ scatter with quadrant labels |
-| 8 | Location Quotients | `location_quotients.py` | Diverging horizontal bars |
-| 9 | Economic Concentration | `concentration.py` | HHI line with reference bands |
+| 1 | Employment & Salary Trends | `employment_trends.py` | Side-by-side line charts (raw + STL trend + 2Q linear projection) |
+| 2 | Workforce Composition | `employment_treemap.py` | Treemap — sectors sized by private employment, colored by FAU industry domain; hover shows employment, establishments, average salary, share. Year buttons below the chart switch the snapshot to the latest quarter of any year back to 2019. |
+| 3 | Industry Landscape | `growth_quadrant.py` | Bubble scatter — YoY employment × YoY wage growth |
+| 4 | Firm Openings & Closings | `firm_formation.py` | Stacked-relative bar — QoQ establishment additions (blue) vs. losses (red) per quarter, with net line + dashed U.S. benchmark overlay |
+| 5 | Industry Specialization | `specialties.py` | Horizontal LQ bars with FAU band coloring (≥1.25 blue, 1.0–1.25 stone, <1.0 gray); reference lines at LQ=1.0 (U.S. average) and LQ=1.25 (strong specialty) |
 
 ## Counties
 
@@ -91,19 +85,21 @@ White background throughout (no dark theme).
 
 ## Data Pipeline
 
-1. `fetch.py` → downloads BLS CSV for each year/quarter/county (3 counties × years × quarters), caches to parquet
+1. `fetch.py` → downloads BLS CSV for each year/quarter/county (3 counties × years × quarters), caches to `qcew_data.parquet`. Also fetches the U.S. national aggregate (area code `US000`, agglvl=10) once and caches to `qcew_national.parquet` for the firm-formation benchmark line.
 2. `clean.py` → standardizes types, adds `employment`, `avg_annual_wage`, `is_suppressed`, `industry_label` columns
 3. `app.py` → filters `df[df["county_name"] == county]` for each tab, passes to components
 4. Filter helpers in `clean.py`: `get_total_covered(df)`, `get_naics_sectors(df)`, `get_latest_quarter(df)`
-5. `analysis.py` → `compute_hhi(df, own_code=5)` returns HHI time series
+5. `analysis.py` → `deseasonalize_trend(series, period=4, log_transform=False)` returns STL trend component
 
 ## API Keys
 
-None required. The QCEW CSV API is unauthenticated. Env vars for BEA/BLS/Census keys existed in the old version but have been removed.
+- **QCEW**: unauthenticated; no key needed.
+- **FRED** (county GDP + unemployment for the secondary KPI row): set `FRED_API_KEY` in the environment. The user's global `~/.claude/CLAUDE.md` already lists their key. Without the env var, secondary KPI cells render "—" but the rest of the dashboard works.
+- **IRS SOI** (net migration): public download, no key.
 
 ## Python Environment
 - Python 3.9, venv at `.venv/`
-- Key packages: streamlit, plotly, pandas, requests
+- Key packages: streamlit, plotly, pandas, requests, statsmodels
 
 ## Cleanup History (2025-03-18)
 Removed 27 legacy files from the old multi-tab, multi-county version:

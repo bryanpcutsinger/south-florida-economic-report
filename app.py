@@ -7,20 +7,21 @@ import streamlit as st
 import pandas as pd
 
 from data.fetch import fetch_all_data
-from data.clean import clean, get_total_covered, get_latest_quarter
+from data.fetch_fred import fetch_real_gdp, fetch_unemployment_rate
+from data.fetch_irs_migration import fetch_irs_migration
+from data.clean import (
+    clean, get_total_covered, get_latest_quarter,
+    latest_gdp_with_growth, latest_unrate_with_yoy, latest_irs_net,
+)
 from data.constants import FAU_BLUE, FAU_RED, FAU_DARK_GRAY, FAU_GRAY, FAU_ELECTRIC_BLUE, FAU_SKY_BLUE, COUNTY_COLORS
 from utils.formatting import fmt_number, fmt_currency
 from utils.narratives import source_citation
 
 from components.employment_trends import render as render_trends
-from components.industry_treemap import render as render_treemap
-from components.wage_landscape import render as render_wages
-from components.industry_growth import render as render_growth
-from components.wage_employment_scatter import render as render_scatter
-from components.establishment_churn import render as render_churn
-from components.wage_premium import render as render_premium
-from components.location_quotients import render as render_lq
-from components.concentration import render as render_concentration
+from components.growth_quadrant import render as render_growth_quadrant
+from components.firm_formation import render as render_firm_formation
+from components.specialties import render as render_specialties
+from components.employment_treemap import render as render_employment_treemap
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -98,6 +99,18 @@ st.markdown(f"""
     .kpi-delta.negative {{
         color: {FAU_RED};
     }}
+    /* Secondary KPI row (real GDP, unemployment, net migration) — typography
+       matches the primary row; only the separator distinguishes them. */
+    .kpi-row.secondary {{
+        margin-top: 0.9rem;
+        padding-top: 0.7rem;
+        border-top: 1px solid {FAU_GRAY};
+    }}
+    .kpi-period {{
+        font-size: 0.7rem;
+        color: #888;
+        margin-top: 0.15rem;
+    }}
 
     /* Data quarter badge */
     .data-badge {{
@@ -156,10 +169,27 @@ if raw_df.empty:
 
 df = clean(raw_df)
 
+# Secondary KPI data sources — fetched once at module load (cache-hot after the
+# first run). Each loader returns an empty DataFrame on missing key/network
+# failure so the secondary KPI cells degrade individually to "—".
+_df_gdp_secondary = fetch_real_gdp()
+_df_unrate_secondary = fetch_unemployment_rate()
+_df_irs_secondary = fetch_irs_migration()
+
+
+def _secondary_for(county_name: str) -> dict:
+    return {
+        "gdp": latest_gdp_with_growth(_df_gdp_secondary, county_name),
+        "unrate": latest_unrate_with_yoy(_df_unrate_secondary, county_name),
+        "irs": latest_irs_net(_df_irs_secondary, county_name),
+    }
+
+
 # ── Regional Snapshot ─────────────────────────────────────────────────────────
 
-def _county_snapshot_card(county_df: pd.DataFrame, county_name: str, color: str):
-    """Render a styled KPI card for one county."""
+def _county_snapshot_card(county_df: pd.DataFrame, county_name: str, color: str,
+                          secondary=None):
+    """Render a styled KPI card for one county (primary + optional secondary row)."""
     totals = get_total_covered(county_df)
     latest = get_latest_quarter(totals)
 
@@ -190,6 +220,9 @@ def _county_snapshot_card(county_df: pd.DataFrame, county_name: str, color: str)
         arrow = "&#9650;" if pct >= 0 else "&#9660;"
         return f'<div class="kpi-delta {css_class}">{arrow} {abs(pct):.1f}% YoY</div>'
 
+    secondary = secondary or {}
+    secondary_html = _secondary_row_html(secondary)
+
     st.markdown(f"""
     <div class="county-card" style="border-left-color: {color};">
         <h3 style="color: {color};">{county_name} County</h3>
@@ -205,13 +238,65 @@ def _county_snapshot_card(county_df: pd.DataFrame, county_name: str, color: str)
                 {_delta_html(estab_pct)}
             </div>
             <div class="kpi-item">
-                <div class="kpi-label">Avg Annual Salary</div>
+                <div class="kpi-label">Average Salary</div>
                 <div class="kpi-value">{wage}</div>
                 {_delta_html(wage_pct)}
             </div>
         </div>
+        {secondary_html}
     </div>
     """, unsafe_allow_html=True)
+
+
+def _secondary_row_html(secondary: dict) -> str:
+    """Build the second KPI row HTML — GDP + Unemployment + Net Migration."""
+    gdp = secondary.get("gdp") or {}
+    unr = secondary.get("unrate") or {}
+    irs = secondary.get("irs") or {}
+
+    # GDP cell: level + YoY growth (positive = good)
+    if gdp:
+        gdp_value = f"${gdp['value_billions']:.1f}B"
+        growth = gdp["yoy_growth"]
+        gdp_arrow = "&#9650;" if growth >= 0 else "&#9660;"
+        gdp_class = "positive" if growth >= 0 else "negative"
+        gdp_delta = f'<div class="kpi-delta {gdp_class}">{gdp_arrow} {abs(growth)*100:.1f}% YoY</div>'
+        gdp_period = f'<div class="kpi-period">({gdp["year"]})</div>'
+    else:
+        gdp_value, gdp_delta, gdp_period = "—", "", '<div class="kpi-period">(unavailable)</div>'
+
+    # Unemployment cell: rate + YoY pp delta.
+    # Arrow tracks the rate's direction (▲ rose, ▼ fell). Color is INVERTED
+    # so rising = red (bad), falling = green (good) — lower-is-better.
+    if unr:
+        unr_value = f"{unr['rate']:.1f}%"
+        delta = unr["yoy_delta_pp"]
+        unr_arrow = "&#9650;" if delta >= 0 else "&#9660;"  # rate up = ▲, rate down = ▼
+        unr_class = "negative" if delta >= 0 else "positive"  # up = red (bad), down = green (good)
+        unr_delta = f'<div class="kpi-delta {unr_class}">{unr_arrow} {abs(delta):.1f}pp YoY</div>'
+        unr_period = f'<div class="kpi-period">({unr["month_label"]})</div>'
+    else:
+        unr_value, unr_delta, unr_period = "—", "", '<div class="kpi-period">(unavailable)</div>'
+
+    # Net migration cell: signed integer + tax year (NO arrow — sign IS the headline)
+    if irs:
+        sign = "+" if irs["net_exemptions"] >= 0 else "−"
+        irs_value = f"{sign}{abs(irs['net_exemptions']):,}"
+        irs_delta = ""  # no arrow on migration
+        irs_period = f'<div class="kpi-period">({irs["tax_year"]} tax year)</div>'
+    else:
+        irs_value, irs_delta, irs_period = "—", "", '<div class="kpi-period">(unavailable)</div>'
+
+    return (
+        f'<div class="kpi-row secondary">'
+        f'<div class="kpi-item"><div class="kpi-label">Inflation-adjusted GDP</div>'
+        f'<div class="kpi-value">{gdp_value}</div>{gdp_delta}{gdp_period}</div>'
+        f'<div class="kpi-item"><div class="kpi-label">Unemployment rate</div>'
+        f'<div class="kpi-value">{unr_value}</div>{unr_delta}{unr_period}</div>'
+        f'<div class="kpi-item"><div class="kpi-label">Net Migration</div>'
+        f'<div class="kpi-value">{irs_value}</div>{irs_delta}{irs_period}</div>'
+        f'</div>'
+    )
 
 # Show the data quarter badge
 sample_totals = get_total_covered(df)
@@ -229,7 +314,7 @@ for col, county_name in zip(cols, county_order):
     with col:
         county_df = df[df["county_name"] == county_name]
         color = COUNTY_COLORS.get(county_name, FAU_BLUE)
-        _county_snapshot_card(county_df, county_name, color)
+        _county_snapshot_card(county_df, county_name, color, _secondary_for(county_name))
 
 # ── County Tabs ───────────────────────────────────────────────────────────────
 
@@ -242,37 +327,21 @@ def _render_county_tab(county_df: pd.DataFrame, county_name: str):
     # Employment Trends
     render_trends(county_df)
 
-    # Industry Composition
+    # Workforce Composition
     st.divider()
-    render_treemap(county_df)
+    render_employment_treemap(county_df)
 
-    # Wage Landscape
+    # Industry Landscape
     st.divider()
-    render_wages(county_df)
+    render_growth_quadrant(county_df)
 
-    # Industry Growth
+    # Firm Openings & Closings
     st.divider()
-    render_growth(county_df)
+    render_firm_formation(county_df)
 
-    # Wage–Employment Landscape
+    # Industry Specialization
     st.divider()
-    render_scatter(county_df)
-
-    # Establishment Dynamics
-    st.divider()
-    render_churn(county_df)
-
-    # Wage Premium Analysis
-    st.divider()
-    render_premium(county_df)
-
-    # Location Quotients
-    st.divider()
-    render_lq(county_df)
-
-    # Economic Concentration
-    st.divider()
-    render_concentration(county_df)
+    render_specialties(county_df)
 
 
 st.divider()

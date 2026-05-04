@@ -3,6 +3,8 @@ Cleaning pipeline and filtering helpers for QCEW data.
 Handles type conversion, derived fields, disclosure suppression, and industry labeling.
 """
 from __future__ import annotations
+from typing import Optional
+
 import pandas as pd
 
 from data.constants import (
@@ -10,11 +12,27 @@ from data.constants import (
     SUPERSECTOR_LABELS,
     SUPERSECTOR_DOMAIN_CODES,
     AGGLVL_TOTAL,
-    AGGLVL_TOTAL_BY_OWN,
-    AGGLVL_SUPERSECTOR,
     AGGLVL_NAICS_SECTOR,
-    AGGLVL_NAICS_4DIGIT,
 )
+
+
+# Project-wide quarter-to-month convention: Q1→Feb, Q2→May, Q3→Aug, Q4→Nov.
+# Mid-quarter dates so quarterly time-series points sit on the right calendar grid.
+QUARTER_TO_MONTH = {1: 2, 2: 5, 3: 8, 4: 11}
+
+
+def add_date_column(df: pd.DataFrame) -> pd.DataFrame:
+    """Add a `date` column from `year` + `qtr` using the project's mid-quarter convention.
+
+    Returns a copy of df with the new column appended. Used by clean() (county data)
+    and get_national_qoq_pct() so the date convention has a single source of truth.
+    """
+    df = df.copy()
+    df["date"] = pd.to_datetime(
+        df["year"].astype(int).astype(str) + "-"
+        + df["qtr"].map(QUARTER_TO_MONTH).astype(str) + "-01"
+    )
+    return df
 
 
 def clean(df: pd.DataFrame) -> pd.DataFrame:
@@ -44,12 +62,8 @@ def clean(df: pd.DataFrame) -> pd.DataFrame:
     # Quarter/year label for charts (e.g., "2024 Q2")
     df["year_qtr"] = df["year"].astype(int).astype(str) + " Q" + df["qtr"].astype(int).astype(str)
 
-    # Date column for time series (use middle month of each quarter)
-    quarter_to_month = {1: 2, 2: 5, 3: 8, 4: 11}
-    df["date"] = pd.to_datetime(
-        df["year"].astype(int).astype(str) + "-"
-        + df["qtr"].map(quarter_to_month).astype(str) + "-01"
-    )
+    # Date column for time series (mid-quarter convention)
+    df = add_date_column(df)
 
     # Derived: average annual wage (weekly × 52)
     df["avg_annual_wage"] = df["avg_wkly_wage"] * 52
@@ -79,24 +93,9 @@ def get_total_covered(df: pd.DataFrame) -> pd.DataFrame:
     return df[(df["own_code"] == 0) & (df["agglvl_code"] == AGGLVL_TOTAL)]
 
 
-def get_total_by_ownership(df: pd.DataFrame, own_code: int = 5) -> pd.DataFrame:
-    """Total by ownership type (agglvl=71)."""
-    return df[(df["own_code"] == own_code) & (df["agglvl_code"] == AGGLVL_TOTAL_BY_OWN)]
-
-
-def get_supersectors(df: pd.DataFrame, own_code: int = 5) -> pd.DataFrame:
-    """Supersector-level data (agglvl=72) for a given ownership type."""
-    return df[(df["own_code"] == own_code) & (df["agglvl_code"] == AGGLVL_SUPERSECTOR)]
-
-
 def get_naics_sectors(df: pd.DataFrame, own_code: int = 5) -> pd.DataFrame:
     """NAICS 2-digit sector data (agglvl=74) for a given ownership type."""
     return df[(df["own_code"] == own_code) & (df["agglvl_code"] == AGGLVL_NAICS_SECTOR)]
-
-
-def get_naics_4digit(df: pd.DataFrame, own_code: int = 5) -> pd.DataFrame:
-    """NAICS 4-digit industry data (agglvl=76) for a given ownership type."""
-    return df[(df["own_code"] == own_code) & (df["agglvl_code"] == AGGLVL_NAICS_4DIGIT)]
 
 
 def get_latest_quarter(df: pd.DataFrame) -> pd.DataFrame:
@@ -107,35 +106,223 @@ def get_latest_quarter(df: pd.DataFrame) -> pd.DataFrame:
     return df[df["date"] == max_date]
 
 
-def filter_counties(df: pd.DataFrame, counties: list[str]) -> pd.DataFrame:
-    """Filter to selected county names."""
-    return df[df["county_name"].isin(counties)]
+def get_growth_quadrant_data(df: pd.DataFrame) -> pd.DataFrame:
+    """Latest-quarter NAICS sectors with valid YoY employment + wage growth rates."""
+    sectors = get_latest_quarter(get_naics_sectors(df, own_code=5))
+    return sectors[
+        (~sectors["is_suppressed"])
+        & (sectors["industry_label"] != "Unclassified")
+        & (sectors["employment"] > 0)
+        & sectors["oty_month3_emplvl_pct_chg"].notna()
+        & sectors["oty_avg_wkly_wage_pct_chg"].notna()
+    ].copy()
 
 
-def filter_years(df: pd.DataFrame, year_range: tuple[int, int]) -> pd.DataFrame:
-    """Filter to a year range (inclusive)."""
-    return df[(df["year"] >= year_range[0]) & (df["year"] <= year_range[1])]
+# ── Secondary KPI derivation helpers ─────────────────────────────────────────
+# Tiny pure functions consumed by the regional snapshot card to summarize
+# the latest values of FRED + IRS series per county.
 
 
-def get_filtered_totals(df: pd.DataFrame, own_code: int,
-                        selected_industry: str | None = None) -> pd.DataFrame:
-    """Return total-level rows, or single-industry rows when an industry is selected.
+def latest_gdp_with_growth(df_gdp: pd.DataFrame, county_name: str) -> dict:
+    """Latest annual real GDP and YoY growth rate for one county.
 
-    When selected_industry is None (or "All Industries"), returns totals
-    (own_code=0 → agglvl 70, otherwise agglvl 71).
-    When an industry is specified, returns NAICS sector rows matching that label.
+    Returns {} when fewer than 2 observations exist (can't compute YoY).
     """
-    if selected_industry and selected_industry != "All Industries":
-        sector = get_naics_sectors(df, own_code)
-        return sector[sector["industry_label"] == selected_industry]
-    # No industry filter — return totals
-    if own_code == 0:
-        return get_total_covered(df)
-    return get_total_by_ownership(df, own_code)
+    if df_gdp.empty:
+        return {}
+    sub = df_gdp[df_gdp["county_name"] == county_name].sort_values("date")
+    if len(sub) < 2:
+        return {}
+    latest = sub.iloc[-1]
+    prior = sub.iloc[-2]
+    return {
+        "value_billions": float(latest["value"]) / 1_000_000,  # thousands → billions
+        "yoy_growth": (float(latest["value"]) - float(prior["value"])) / float(prior["value"]),
+        "year": int(latest["date"].year),
+    }
 
 
-def get_available_industries(df: pd.DataFrame, own_code: int) -> list[str]:
-    """Sorted list of unique NAICS sector labels available for the dropdown."""
-    sectors = get_naics_sectors(df, own_code)
-    labels = sectors["industry_label"].dropna().unique().tolist()
-    return sorted(labels)
+def latest_unrate_with_yoy(df_unrate: pd.DataFrame, county_name: str) -> dict:
+    """Latest monthly unemployment rate + YoY pp delta for one county.
+
+    The FRED LAUS series for these counties are NSA (not seasonally adjusted),
+    so YoY uses a 12-month lookback (same month one year earlier) to neutralize
+    the seasonal pattern instead of comparing to the prior month.
+    """
+    if df_unrate.empty:
+        return {}
+    sub = df_unrate[df_unrate["county_name"] == county_name].sort_values("date")
+    if len(sub) < 13:
+        return {}
+    latest = sub.iloc[-1]
+    yoy = sub.iloc[-13]
+    return {
+        "rate": float(latest["value"]),
+        "yoy_delta_pp": float(latest["value"]) - float(yoy["value"]),
+        "month_label": latest["date"].strftime("%b %Y"),
+    }
+
+
+def latest_irs_net(df_irs: pd.DataFrame, county_name: str) -> dict:
+    """Most recent IRS SOI net domestic-migration figure for one county."""
+    if df_irs.empty:
+        return {}
+    sub = df_irs[df_irs["county_name"] == county_name]
+    if sub.empty:
+        return {}
+    row = sub.iloc[0]
+    return {
+        "net_exemptions": int(row["net_exemptions"]),
+        "tax_year": int(row["tax_year"]),
+    }
+
+
+MIN_EMPLOYMENT_LQ = 1000  # Noise floor: small sectors can swing LQ on a single firm.
+
+
+def get_employment_treemap_data(
+    df: pd.DataFrame, year: Optional[int] = None
+) -> pd.DataFrame:
+    """Treemap snapshot for one quarter.
+
+    `year=None` returns the absolute latest quarter (the default behavior).
+    `year=YYYY` returns the latest quarter within that year.
+
+    Filters to own_code=5 (private), drops suppressed/Unclassified rows and
+    sectors with zero employment. Returns industry_label, employment,
+    qtrly_estabs, avg_annual_wage, share, year, qtr — one row per disclosable
+    sector, sorted by employment desc.
+    """
+    sectors = get_naics_sectors(df, own_code=5)
+    sectors = sectors[
+        (~sectors["is_suppressed"])
+        & (sectors["industry_label"] != "Unclassified")
+        & (sectors["employment"] > 0)
+    ].copy()
+    if sectors.empty:
+        return sectors
+
+    if year is None:
+        sectors = get_latest_quarter(sectors)
+    else:
+        sub = sectors[sectors["year"] == int(year)]
+        if sub.empty:
+            return sub.head(0)
+        max_q = int(sub["qtr"].max())
+        sectors = sub[sub["qtr"] == max_q]
+
+    if sectors.empty:
+        return sectors
+
+    sectors = sectors.copy()
+    total = sectors["employment"].sum()
+    sectors["share"] = sectors["employment"] / total
+    return (
+        sectors[[
+            "industry_label", "employment", "qtrly_estabs", "avg_annual_wage",
+            "share", "year", "qtr",
+        ]]
+        .sort_values("employment", ascending=False)
+        .reset_index(drop=True)
+    )
+
+
+def get_employment_treemap_years(df: pd.DataFrame) -> list[tuple[int, int]]:
+    """Return [(year, latest_qtr_for_year), ...] ascending for years with disclosable data."""
+    sectors = get_naics_sectors(df, own_code=5)
+    sectors = sectors[
+        (~sectors["is_suppressed"])
+        & (sectors["industry_label"] != "Unclassified")
+        & (sectors["employment"] > 0)
+    ]
+    if sectors.empty:
+        return []
+    yq = sectors.groupby("year")["qtr"].max().sort_index().reset_index()
+    return [(int(r["year"]), int(r["qtr"])) for _, r in yq.iterrows()]
+
+
+def get_treemap_snapshots(df: pd.DataFrame) -> list:
+    """All (year, latest-qtr, treemap-data) snapshots, ascending by year.
+
+    Returns a list of (int, int, pd.DataFrame) tuples. Years whose snapshot is
+    empty (e.g., universally suppressed) are dropped so the caller never has
+    to render a button with no underlying data. Callers that want the most
+    recent snapshot use `snapshots[-1]`.
+    """
+    years_asc = get_employment_treemap_years(df)
+    snapshots = []
+    for year, qtr in years_asc:
+        snap = get_employment_treemap_data(df, year=year)
+        if not snap.empty:
+            snapshots.append((year, qtr, snap))
+    return snapshots
+
+
+def get_specialties_data(df: pd.DataFrame, top_n: int = 12) -> pd.DataFrame:
+    """Latest-quarter NAICS sectors with valid employment LQ, top N by LQ.
+
+    Filters to own_code=5 (private), drops suppressed/Unclassified rows,
+    requires employment >= MIN_EMPLOYMENT_LQ to avoid LQ noise in tiny sectors.
+    """
+    sectors = get_latest_quarter(get_naics_sectors(df, own_code=5))
+    sectors = sectors[
+        (~sectors["is_suppressed"])
+        & (sectors["industry_label"] != "Unclassified")
+        & (sectors["employment"] >= MIN_EMPLOYMENT_LQ)
+        & sectors["lq_month3_emplvl"].notna()
+    ]
+    return sectors.nlargest(top_n, "lq_month3_emplvl").copy()
+
+
+def get_national_qoq_pct(df_national: pd.DataFrame) -> pd.Series:
+    """U.S. quarterly QoQ percent change in establishment count.
+
+    Input is the raw cached national DataFrame (1 row per quarter, total covered,
+    all industries — produced by data.fetch.fetch_national_data). Returns a
+    date-indexed Series of pct change in `qtrly_estabs`; the first quarter
+    drops out (no prior).
+    """
+    if df_national.empty or "qtrly_estabs" not in df_national.columns:
+        return pd.Series(dtype=float)
+    df = add_date_column(df_national).sort_values("date").set_index("date")
+    return df["qtrly_estabs"].pct_change().dropna()
+
+
+def get_firm_formation_data(df: pd.DataFrame) -> pd.DataFrame:
+    """Quarterly establishment churn decomposed into industries gaining and losing firms.
+
+    For each (industry, quarter), compute the QoQ change in `qtrly_estabs`. Then
+    aggregate per quarter:
+      - additions   = sum of positive industry-level deltas (industries adding firms)
+      - subtractions = sum of negative industry-level deltas (industries losing firms; ≤ 0)
+      - net         = additions + subtractions = county-wide QoQ change in establishment count
+
+    Returns a DataFrame indexed by quarter with columns date, year_qtr, additions,
+    subtractions, net. The first quarter in the input series is dropped (no QoQ
+    change available).
+
+    Note: this is *not* gross firm openings/closings (BLS doesn't publish those at
+    the county level). It's industry-level establishment churn aggregated upward.
+    """
+    sectors = get_naics_sectors(df, own_code=5)
+    sectors = sectors[
+        (~sectors["is_suppressed"])
+        & (sectors["industry_label"] != "Unclassified")
+        & sectors["qtrly_estabs"].notna()
+    ].copy()
+    if sectors.empty:
+        return pd.DataFrame(columns=["date", "year_qtr", "additions", "subtractions", "net"])
+
+    sectors = sectors.sort_values(["industry_label", "date"])
+    sectors["estabs_delta"] = sectors.groupby("industry_label")["qtrly_estabs"].diff()
+    sectors = sectors.dropna(subset=["estabs_delta"])
+
+    quarterly = (
+        sectors.groupby(["date", "year_qtr"], as_index=False)
+        .agg(
+            additions=("estabs_delta", lambda s: s[s > 0].sum()),
+            subtractions=("estabs_delta", lambda s: s[s < 0].sum()),
+        )
+    )
+    quarterly["net"] = quarterly["additions"] + quarterly["subtractions"]
+    return quarterly.sort_values("date").reset_index(drop=True)

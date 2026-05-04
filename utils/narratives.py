@@ -2,14 +2,23 @@
 Narrative text generation and source citations.
 Template-based descriptive paragraphs — no LLM calls.
 """
-import pandas as pd
-
 from utils.formatting import fmt_number, fmt_pct
 
 
 def source_citation(name: str, url: str, frequency: str) -> str:
     """Return a source citation string for st.caption()."""
     return f"Source: [{name}]({url}) — {frequency}"
+
+
+def format_industry_list(names: list[str]) -> str:
+    """Join 1, 2, or 3+ industry names with correct comma/conjunction usage."""
+    if len(names) == 0:
+        return ""
+    if len(names) == 1:
+        return names[0]
+    if len(names) == 2:
+        return f"{names[0]} and {names[1]}"
+    return ", ".join(names[:-1]) + f", and {names[-1]}"
 
 
 def narrate_employment_trends(
@@ -32,26 +41,3 @@ def narrate_employment_trends(
         f"went from {fmt_number(start_empl)} to {fmt_number(end_empl)}, "
         f"{direction} of {fmt_pct(abs(change_pct))}."
     )
-
-
-def narrate_wage_distribution(
-    county_name: str,
-    year: int,
-    qtr: int,
-    highest_industry: str,
-    highest_wage: float,
-    lowest_industry: str,
-    lowest_wage: float,
-    overall_avg: float,
-) -> str:
-    """Describe the wage range across industries."""
-    from utils.formatting import fmt_currency
-
-    text = (
-        f"In {year} Q{qtr}, the highest-paying industry in {county_name} was "
-        f"{highest_industry} (${highest_wage:,.0f}/year), "
-        f"while the lowest was {lowest_industry} (${lowest_wage:,.0f}/year)."
-    )
-    if overall_avg is not None and pd.notna(overall_avg):
-        text += f" The overall average was ${overall_avg:,.0f}."
-    return text
