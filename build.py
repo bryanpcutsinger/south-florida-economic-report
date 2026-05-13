@@ -254,7 +254,7 @@ def _secondary_row_html(secondary):
         irs_delta = ""  # no arrow on migration — sign is the headline
         irs_period = (
             f'<div class="kpi-period">'
-            f'({irs["origin_year"]}→{irs["dest_year"]} filings, domestic only)'
+            f'({irs["origin_year"]}→{irs["dest_year"]} filings, US + foreign)'
             f'</div>'
         )
     else:
@@ -636,10 +636,11 @@ def build_html(df):
         f'<h3 style="color: {FAU_BLUE};">Regional Snapshot</h3>',
         f'<div class="snapshot-row">{kpi_cards}</div>',
         '<p class="kpi-caption">'
-        'Net Migration reflects IRS SOI domestic county-to-county filings only '
-        '(excludes international migration, which is a major component of Florida '
-        'population growth). FRED real GDP and unemployment rate vintages reflect '
-        'the most recent BEA/BLS releases as of the data badge above.'
+        'Net Migration reflects IRS SOI county-to-county filings (Total Migration-US '
+        'and Foreign) — the net change in tax-filer exemptions between consecutive '
+        'filing years, inclusive of moves into and out of the country. FRED real GDP '
+        'and unemployment rate vintages reflect the most recent BEA/BLS releases as '
+        'of the data badge above.'
         '</p>',
         '<div class="divider"></div>',
         f'<div class="tab-bar">{tab_buttons}</div>',

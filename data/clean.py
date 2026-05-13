@@ -173,7 +173,7 @@ def latest_unrate_with_yoy(df_unrate: pd.DataFrame, county_name: str) -> dict:
 
 
 def latest_irs_net(df_irs: pd.DataFrame, county_name: str) -> dict:
-    """Most recent IRS SOI net domestic-migration figure for one county.
+    """Most recent IRS SOI net migration figure (US + Foreign) for one county.
 
     Returns both endpoints of the migration window (origin_year, dest_year) so
     the display can label the figure as a two-year flow rather than collapsing

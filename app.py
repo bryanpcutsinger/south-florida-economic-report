@@ -281,14 +281,14 @@ def _secondary_row_html(secondary: dict) -> str:
 
     # Net migration cell: signed integer + two-year flow label
     # (NO arrow — sign IS the headline). Label calls out the two-year window
-    # explicitly and discloses that IRS SOI excludes international flows.
+    # explicitly; underlying flow is IRS SOI "Total Migration-US and Foreign".
     if irs:
         sign = "+" if irs["net_exemptions"] >= 0 else "−"
         irs_value = f"{sign}{abs(irs['net_exemptions']):,}"
         irs_delta = ""  # no arrow on migration
         irs_period = (
             f'<div class="kpi-period">'
-            f'({irs["origin_year"]}→{irs["dest_year"]} filings, domestic only)'
+            f'({irs["origin_year"]}→{irs["dest_year"]} filings, US + foreign)'
             f'</div>'
         )
     else:
@@ -324,10 +324,11 @@ for col, county_name in zip(cols, county_order):
         _county_snapshot_card(county_df, county_name, color, _secondary_for(county_name))
 
 st.caption(
-    "Net Migration reflects IRS SOI domestic county-to-county filings only "
-    "(excludes international migration, which is a major component of Florida "
-    "population growth). FRED real GDP and unemployment rate vintages reflect "
-    "the most recent BEA/BLS releases as of the data badge above."
+    "Net Migration reflects IRS SOI county-to-county filings (Total Migration-US "
+    "and Foreign) — the net change in tax-filer exemptions between consecutive "
+    "filing years, inclusive of moves into and out of the country. FRED real GDP "
+    "and unemployment rate vintages reflect the most recent BEA/BLS releases as "
+    "of the data badge above."
 )
 
 # ── County Tabs ───────────────────────────────────────────────────────────────

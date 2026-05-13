@@ -3,8 +3,10 @@ IRS Statistics of Income (SOI) county-to-county migration fetcher.
 
 Downloads the consolidated national inflow + outflow CSV files for the latest
 year-pair (per LATEST_IRS_YEAR_PAIR in data/constants.py), filters to the
-"Total Migration-US" published summary row for each county, and writes a small
-parquet with one row per county.
+"Total Migration-US and Foreign" published summary row for each county, and
+writes a small parquet with one row per county. This matches the convention
+used in most regional economic studies, which report migration inclusive of
+foreign inflows/outflows rather than US-domestic-only.
 
 Year-pair convention: "2223" = tax year 2022 returns vs. tax year 2023 returns
 (i.e., flows that occurred between those filing years).
@@ -23,8 +25,8 @@ CACHE_DIR = Path(__file__).parent / "cache"
 IRS_CACHE = CACHE_DIR / "qcew_irs_migration.parquet"
 
 FLORIDA_STATE_FIPS = 12
-TOTAL_MIGRATION_US_STATE_FIPS = 97  # IRS sentinel: aggregate across all U.S. origins
-TOTAL_MIGRATION_US_COUNTY_FIPS = 0
+TOTAL_MIGRATION_STATE_FIPS = 96  # IRS sentinel: aggregate across US + Foreign origins
+TOTAL_MIGRATION_COUNTY_FIPS = 0
 
 
 def _download_csv(url: str) -> pd.DataFrame:
@@ -45,18 +47,18 @@ def _county_fips_from_name(name: str) -> int:
 def _net_for_county(
     inflow: pd.DataFrame, outflow: pd.DataFrame, county_fips: int
 ) -> dict:
-    """Look up the published Total Migration-US summary row for one county."""
+    """Look up the published Total Migration-US and Foreign summary row for one county."""
     in_row = inflow[
         (inflow["y2_statefips"] == FLORIDA_STATE_FIPS)
         & (inflow["y2_countyfips"] == county_fips)
-        & (inflow["y1_statefips"] == TOTAL_MIGRATION_US_STATE_FIPS)
-        & (inflow["y1_countyfips"] == TOTAL_MIGRATION_US_COUNTY_FIPS)
+        & (inflow["y1_statefips"] == TOTAL_MIGRATION_STATE_FIPS)
+        & (inflow["y1_countyfips"] == TOTAL_MIGRATION_COUNTY_FIPS)
     ]
     out_row = outflow[
         (outflow["y1_statefips"] == FLORIDA_STATE_FIPS)
         & (outflow["y1_countyfips"] == county_fips)
-        & (outflow["y2_statefips"] == TOTAL_MIGRATION_US_STATE_FIPS)
-        & (outflow["y2_countyfips"] == TOTAL_MIGRATION_US_COUNTY_FIPS)
+        & (outflow["y2_statefips"] == TOTAL_MIGRATION_STATE_FIPS)
+        & (outflow["y2_countyfips"] == TOTAL_MIGRATION_COUNTY_FIPS)
     ]
     if in_row.empty or out_row.empty:
         return {}
