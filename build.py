@@ -364,16 +364,18 @@ def _trends_chart(totals, y_col, title, color, tickformat, hover_prefix, log_tra
     fig.update_layout(
         title=dict(text=title, font=dict(size=14)),
         plot_bgcolor="white", paper_bgcolor="white",
-        hovermode="x unified", height=420,
-        margin=dict(t=50, b=70, l=80, r=20),
-        legend=dict(orientation="h", yanchor="top", y=-0.18, x=0),
+        hovermode="x unified", height=440,
+        margin=dict(t=50, b=90, l=100, r=20),
+        legend=dict(orientation="h", yanchor="top", y=-0.22, x=0),
         xaxis=dict(
             showgrid=False,
+            title=dict(text="Quarter", standoff=15),
             showline=True, linecolor="black", linewidth=2, mirror=False,
             ticks="outside", tickcolor="black", ticklen=4,
         ),
         yaxis=dict(
             showgrid=False, tickformat=tickformat,
+            title=dict(text=title, standoff=15),
             showline=True, linecolor="black", linewidth=2, mirror=False,
             ticks="outside", tickcolor="black", ticklen=4,
         ),
