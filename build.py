@@ -365,15 +365,15 @@ def _trends_chart(totals, y_col, title, color, tickformat, hover_prefix, log_tra
         title=dict(text=title, font=dict(size=14)),
         plot_bgcolor="white", paper_bgcolor="white",
         hovermode="x unified", height=420,
-        margin=dict(t=50, b=80, l=60, r=20),
+        margin=dict(t=50, b=70, l=80, r=20),
         legend=dict(orientation="h", yanchor="top", y=-0.18, x=0),
         xaxis=dict(
-            showgrid=False, title="Quarter",
+            showgrid=False,
             showline=True, linecolor="black", linewidth=2, mirror=False,
             ticks="outside", tickcolor="black", ticklen=4,
         ),
         yaxis=dict(
-            showgrid=False, tickformat=tickformat, title=title,
+            showgrid=False, tickformat=tickformat,
             showline=True, linecolor="black", linewidth=2, mirror=False,
             ticks="outside", tickcolor="black", ticklen=4,
         ),
