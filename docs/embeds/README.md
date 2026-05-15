@@ -11,6 +11,9 @@ Base URL: `https://bryanpcutsinger.github.io/south-florida-economic-report/embed
 | Embed | Path (append to base URL) | Suggested height | Min. width |
 |---|---|---:|---:|
 | Regional KPI Snapshot (all 3 counties + caption) | `kpi-cards.html` | 380 px | 900 px |
+| Palm Beach KPI Snapshot (single county + caption) | `kpi-palm-beach.html` | 320 px | 360 px |
+| Broward KPI Snapshot (single county + caption) | `kpi-broward.html` | 320 px | 360 px |
+| Miami-Dade KPI Snapshot (single county + caption) | `kpi-miami-dade.html` | 320 px | 360 px |
 | **Palm Beach** | | | |
 | Employment & Salary Trends | `palm-beach/trends.html` | 600 px | 700 px |
 | Workforce Composition (treemap) | `palm-beach/workforce-composition.html` | 600 px | 600 px |
@@ -82,7 +85,7 @@ This gives non-visual users the headline information without depending on the ch
 
 ## Update Cadence
 
-Every Monday at 1:00 AM Eastern, a GitHub Action regenerates all 13 embed files from fresh BLS QCEW, FRED, and IRS SOI data and commits the new HTML to this repository. Within ~10 minutes, GitHub Pages serves the updated versions to any iframe pointing at these URLs — no action required on the FAU side.
+Every Monday at 1:00 AM Eastern, a GitHub Action regenerates all 16 embed files from fresh BLS QCEW, FRED, and IRS SOI data and commits the new HTML to this repository. Within ~10 minutes, GitHub Pages serves the updated versions to any iframe pointing at these URLs — no action required on the FAU side.
 
 GitHub Pages sends `cache-control: max-age=600`, so individual users may see a 10-minute lag after each refresh. If FAU needs to force an immediate update for any embed (e.g., for a press event), open the page in a private/incognito window.
 

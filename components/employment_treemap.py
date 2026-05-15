@@ -60,7 +60,7 @@ def build_figure(snapshots: list) -> go.Figure:
             customdata=plot_data[["share", "qtrly_estabs", "avg_annual_wage"]].values,
             marker=dict(colors=domain_colors, line=dict(width=2, color="white")),
             textinfo="label+value",
-            texttemplate="<b>%{label}</b><br>%{value:,.0f}",
+            texttemplate="<b>%{label}</b><br>%{value:,.0f} (%{customdata[0]:.1%})",
             textfont=dict(
                 family="Source Sans Pro, sans-serif",
                 size=12,

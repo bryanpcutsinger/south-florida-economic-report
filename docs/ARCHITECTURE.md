@@ -124,6 +124,8 @@ The dashboard is live at the URL above and the iframe embeds are in production u
 
 ## Change Log
 
+**2026-05-15** — Added per-county KPI iframe embeds (`kpi-palm-beach.html`, `kpi-broward.html`, `kpi-miami-dade.html`) for use on each county's individual FAU data page; treemap tiles now show share of private workforce alongside employment count.
+
 **2026-05-13** — Repo cleanup for public/professional polish: added root README, LICENSE (MIT), `.python-version`; renamed `CLAUDE.md` to `docs/ARCHITECTURE.md`; removed untracked clutter from repo root.
 
 **2026-05-13** — Added iframe embed outputs for the FAU website (`docs/embeds/`) via `build.py` and weekly auto-refresh workflow.

@@ -6,7 +6,7 @@ An interactive dashboard tracking employment, wages, firm formation, and industr
 
 ## What it is
 
-A single-page Streamlit + Plotly application that ships in two forms: a fully interactive Streamlit app for local exploration, and a static HTML build published to GitHub Pages. The static build also produces 13 standalone iframe-embeddable chart pages that Florida Atlantic University embeds on the FAU website. Data comes from the BLS Quarterly Census of Employment and Wages (QCEW), the Federal Reserve Bank of St. Louis (FRED), and the IRS Statistics of Income migration files.
+A single-page Streamlit + Plotly application that ships in two forms: a fully interactive Streamlit app for local exploration, and a static HTML build published to GitHub Pages. The static build also produces 16 standalone iframe-embeddable pages — the combined regional snapshot, one snapshot per county, and twelve chart pages — that Florida Atlantic University embeds on the FAU website. Data comes from the BLS Quarterly Census of Employment and Wages (QCEW), the Federal Reserve Bank of St. Louis (FRED), and the IRS Statistics of Income migration files.
 
 ## Embedding on the FAU website
 

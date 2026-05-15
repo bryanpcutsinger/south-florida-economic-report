@@ -210,6 +210,7 @@ h1, h2, h3, h4 { color: """ + FAU_BLUE + """; }
 
 /* KPI cards */
 .snapshot-row { display: flex; gap: 1rem; margin-bottom: 1rem; }
+.snapshot-row.single-county { display: block; max-width: 480px; margin: 0 auto 1rem; }
 .county-card {
     flex: 1;
     background: linear-gradient(135deg, #F8F9FA 0%, #FFFFFF 100%);
@@ -841,12 +842,14 @@ def write_embeds(df):
     embeds_dir = DOCS_DIR / "embeds"
     embeds_dir.mkdir(parents=True, exist_ok=True)
 
-    # ── KPI embed: 3 county cards + disclosure caption (no Plotly figures). ──
+    # ── KPI embeds: combined 3-county card + one per-county card each. ───────
     df_gdp = fetch_real_gdp()
     df_unrate = fetch_unemployment_rate()
     df_irs = fetch_irs_migration()
 
-    kpi_cards = ""
+    # Build each county's KPI card once; reuse for the combined embed and
+    # the per-county embeds.
+    county_cards: dict[str, str] = {}
     for county_name in COUNTY_ORDER:
         county_df = df[df["county_name"] == county_name]
         color = COUNTY_COLORS.get(county_name, FAU_BLUE)
@@ -855,17 +858,32 @@ def write_embeds(df):
             "unrate": latest_unrate_with_yoy(df_unrate, county_name),
             "irs": latest_irs_net(df_irs, county_name),
         }
-        kpi_cards += build_kpi_card(county_df, county_name, color, secondary)
+        county_cards[county_name] = build_kpi_card(county_df, county_name, color, secondary)
 
+    # Combined 3-county snapshot (existing FAU embed — must keep URL stable).
     kpi_body = (
         f'<h3 style="color: {FAU_BLUE}; margin-bottom: 0.5rem;">Regional Snapshot</h3>'
-        f'<div class="snapshot-row">{kpi_cards}</div>'
+        f'<div class="snapshot-row">{"".join(county_cards.values())}</div>'
         f'{KPI_CAPTION_HTML}'
     )
     (embeds_dir / "kpi-cards.html").write_text(
         wrap_as_embed(kpi_body, {}, "South Florida Regional Snapshot"),
         encoding="utf-8",
     )
+
+    # Per-county snapshots — one iframe per county for individual data pages.
+    for county_name, card_html in county_cards.items():
+        slug = county_name.lower().replace(" ", "-")
+        body = (
+            f'<h3 style="color: {FAU_BLUE}; margin-bottom: 0.5rem;">'
+            f'{county_name} County Snapshot</h3>'
+            f'<div class="snapshot-row single-county">{card_html}</div>'
+            f'{KPI_CAPTION_HTML}'
+        )
+        (embeds_dir / f"kpi-{slug}.html").write_text(
+            wrap_as_embed(body, {}, f"{county_name} County — KPI Snapshot"),
+            encoding="utf-8",
+        )
 
     # ── Per-county chart embeds: 4 sections × 3 counties = 12 files. ─────────
     for county_name in COUNTY_ORDER:
@@ -882,7 +900,7 @@ def write_embeds(df):
                 encoding="utf-8",
             )
 
-    print(f"  Wrote 1 KPI embed + {len(COUNTY_ORDER) * len(SECTION_BUILDERS)} chart embeds to {embeds_dir}")
+    print(f"  Wrote {1 + len(COUNTY_ORDER)} KPI embeds + {len(COUNTY_ORDER) * len(SECTION_BUILDERS)} chart embeds to {embeds_dir}")
 
 
 # ── Entry point ──────────────────────────────────────────────────────────────
