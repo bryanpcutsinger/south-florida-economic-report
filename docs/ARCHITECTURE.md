@@ -20,7 +20,7 @@ data/
   clean.py                      # QCEW cleaning pipeline + filtering helpers
   analysis.py                   # STL trend decomposition + linear 2Q projection (deseasonalize_trend, project_trend)
   fetch.py                      # QCEW data fetch (BLS CSV API) — county + national caches in data/cache/
-  fetch_fred.py                 # FRED API client — county real GDP + unemployment rate (powers KPI secondary row)
+  fetch_fred.py                 # FRED API client — county real GDP + unemployment rate (powers KPI secondary row); rate-limit backoff (honors Retry-After)
   fetch_irs_migration.py        # IRS SOI migration fetcher — net domestic migration per county (KPI secondary row)
   cache/                        # Parquet caches — qcew_data.parquet, qcew_national.parquet, qcew_fred_gdp.parquet, qcew_fred_unrate.parquet, qcew_irs_migration.parquet
 components/
@@ -45,7 +45,7 @@ audits/                         # Dated point-in-time data validation reports
 - 3 styled KPI cards (one per county), each showing two rows:
   - Primary (QCEW): Total Employment, Establishments, Average Salary — all with YoY % change.
   - Secondary: Real GDP ($B + YoY %), Unemployment rate (% + YoY pp delta, sign-inverted so falling = green), Net Migration (signed integer, IRS SOI tax-year flow, no arrow). Each cell labels its data period in small gray text.
-- Secondary row reads "—" gracefully if `FRED_API_KEY` env var is missing or any fetch fails; primary row is unaffected.
+- Secondary row reads "—" gracefully if `FRED_API_KEY` env var is missing or any fetch fails; primary row is unaffected. FRED fetches retry with exponential backoff on rate-limiting (HTTP 429), and the static CI build never publishes blanks — when a key is set but the GDP/unemployment fetch fails, `build.py` aborts and the last good published values are preserved rather than overwritten.
 
 ### County Tabs (Palm Beach | Broward | Miami-Dade)
 Each tab renders 4 sections for that county:
@@ -108,7 +108,7 @@ For data source citations (BLS QCEW, FRED, IRS SOI), see the [root README](../RE
 ## API Keys
 
 - **QCEW**: unauthenticated; no key needed.
-- **FRED** (county GDP + unemployment for the secondary KPI row): set `FRED_API_KEY` in the environment. Without it, secondary KPI cells render "—" but the rest of the dashboard works.
+- **FRED** (county GDP + unemployment for the secondary KPI row): set `FRED_API_KEY` in the environment. Without it, secondary KPI cells render "—" but the rest of the dashboard works. Fetches retry with exponential backoff on HTTP 429 rate-limiting; the static build aborts (rather than overwriting published values) if a key is set but the fetch fails.
 - **IRS SOI** (net migration): public download, no key.
 
 ## Python Environment
@@ -123,6 +123,11 @@ For data source citations (BLS QCEW, FRED, IRS SOI), see the [root README](../RE
 The dashboard is live at the URL above and the iframe embeds are in production use on the FAU website. The weekly GitHub Action keeps everything current.
 
 ## Change Log
+
+**2026-06-01** — FRED rate-limit resilience + CI fail-safe.
+- `data/fetch_fred.py`: added inter-request spacing (`_INTER_REQUEST_GAP = 0.6s`) between consecutive series requests and a `_fetch_one(series_id, api_key)` helper that retries transient failures — chiefly HTTP 429 — with exponential backoff (`_MAX_ATTEMPTS = 5`, `_BACKOFF_BASE = 1.0s`, doubling each attempt), honoring the 429 `Retry-After` header. Fixes blank Real GDP / Unemployment KPI cells caused by FRED burst rate-limiting (the back-to-back 3-county fetch 429'd later requests; since `_fetch_series_set` drops the whole set if any one county fails, the entire row went blank, and the weekly Action then auto-committed the blank build). The "drop the set if any county fails" behavior is unchanged (commit 71da330).
+- `build.py`: belt-and-suspenders guard in `__main__` — if a FRED key is configured but `fetch_real_gdp()` or `fetch_unemployment_rate()` returns empty, abort with `sys.exit(1)` BEFORE writing any output. The Action's commit step is skipped on build failure, so the last good published KPI values are preserved instead of overwritten with "(unavailable)". With no key set the guard is skipped and the secondary row still degrades to "—" (commit ba484b9).
+- IRS SOI Net Migration (no key) was unaffected by the rate-limit bug.
 
 **2026-05-15** — Added per-county KPI iframe embeds (`kpi-palm-beach.html`, `kpi-broward.html`, `kpi-miami-dade.html`) for use on each county's individual FAU data page; treemap tiles now show share of private workforce alongside employment count.
 

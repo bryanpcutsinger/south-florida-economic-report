@@ -4,6 +4,11 @@ FRED API client for county-level real GDP and unemployment series.
 Reads FRED_API_KEY from an environment variable. If missing or any call
 fails, returns an empty DataFrame so the secondary KPI row gracefully
 degrades to "—".
+
+The per-county series are fetched back-to-back, so requests are spaced out
+and retried with exponential backoff that honors FRED's 429 ``Retry-After``
+header to stay under FRED's burst rate limit (see ``_fetch_one`` and
+``_fetch_series_set``).
 """
 from __future__ import annotations
 
@@ -72,7 +77,9 @@ def _fetch_one(series_id: str, api_key: str) -> pd.DataFrame:
         except Exception:
             wait = delay
         else:
-            # Reached only when the call succeeded but returned no rows.
+            # Succeeded but returned no rows. Our series are always populated,
+            # so an empty response means a transient hiccup — back off and retry
+            # rather than accept it as "no data".
             wait = delay
         if attempt < _MAX_ATTEMPTS - 1:
             time.sleep(wait)
@@ -80,7 +87,7 @@ def _fetch_one(series_id: str, api_key: str) -> pd.DataFrame:
     return pd.DataFrame()
 
 
-def _fetch_series_set(series_map: dict, api_key: str) -> pd.DataFrame:
+def _fetch_series_set(series_map: dict[str, str], api_key: str) -> pd.DataFrame:
     """Fetch all county series in long-format (county_name, date, value).
 
     Each series is retried with backoff (see _fetch_one), and consecutive
@@ -103,6 +110,11 @@ def _fetch_series_set(series_map: dict, api_key: str) -> pd.DataFrame:
 
 def _fred_api_key() -> str:
     return os.environ.get("FRED_API_KEY", "").strip()
+
+
+def fred_key_configured() -> bool:
+    """True if a non-empty FRED_API_KEY is set — public predicate for callers."""
+    return bool(_fred_api_key())
 
 
 def fetch_real_gdp() -> pd.DataFrame:

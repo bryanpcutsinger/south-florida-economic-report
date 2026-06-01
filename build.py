@@ -922,14 +922,26 @@ if __name__ == "__main__":
     # published instead of overwriting them with "(unavailable)". With no key
     # set (local/no-key runs), skip the guard and let the row degrade to "—".
     # The fetches cache on success, so build_html/write_embeds reuse these.
-    from data.fetch_fred import _fred_api_key, fetch_real_gdp, fetch_unemployment_rate
-    if _fred_api_key():
-        if fetch_real_gdp().empty or fetch_unemployment_rate().empty:
+    from data.fetch_fred import (
+        fred_key_configured, fetch_real_gdp, fetch_unemployment_rate,
+    )
+    if fred_key_configured():
+        # Call both (so each caches on success) before deciding, and name the
+        # offending series in the abort message for faster diagnosis.
+        empty = [
+            name
+            for name, frame in (
+                ("Real GDP", fetch_real_gdp()),
+                ("unemployment", fetch_unemployment_rate()),
+            )
+            if frame.empty
+        ]
+        if empty:
             print(
-                "ERROR: FRED_API_KEY is set but the GDP/unemployment fetch "
-                "returned no data (likely rate-limited or a FRED outage). "
-                "Aborting without writing so the currently published KPI "
-                "values are preserved rather than blanked."
+                f"ERROR: FRED_API_KEY is set but the {' and '.join(empty)} "
+                "fetch returned no data (likely rate-limited or a FRED outage). "
+                "Aborting without writing so the currently published KPI values "
+                "are preserved rather than blanked."
             )
             sys.exit(1)
 

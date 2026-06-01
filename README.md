@@ -52,11 +52,11 @@ audits/           Point-in-time data validation reports
 .github/workflows Weekly auto-refresh workflow
 ```
 
-Internal architecture details live in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+Internal architecture details live in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). Planned improvements and future ideas live in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 ## Data refresh schedule
 
-Every Monday at 1:00 AM Eastern, the GitHub Action regenerates all HTML files from fresh BLS QCEW, FRED, and IRS SOI data and commits the result. GitHub Pages serves the updated versions within ~10 minutes.
+Every Monday at 1:00 AM Eastern, the GitHub Action regenerates all HTML files from fresh BLS QCEW, FRED, and IRS SOI data and commits the result. GitHub Pages serves the updated versions within ~10 minutes. If FRED is temporarily rate-limited or unavailable during a rebuild, the build aborts rather than commit, preserving the previously published Real GDP and Unemployment KPI values instead of blanking them.
 
 ## Data sources
 
