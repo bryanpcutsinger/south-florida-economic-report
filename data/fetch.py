@@ -6,6 +6,7 @@ use the "Refresh Data" button in the sidebar to pull new quarters.
 """
 from __future__ import annotations
 import io
+import time
 from pathlib import Path
 
 import pandas as pd
@@ -24,6 +25,44 @@ from data.constants import (
 CACHE_DIR = Path(__file__).parent / "cache"
 CACHE_FILE = CACHE_DIR / "qcew_data.parquet"
 NATIONAL_CACHE_FILE = CACHE_DIR / "qcew_national.parquet"
+
+# Retry transient failures on the per-area CSV fetch. Without this, a single
+# network blip silently drops that county-quarter (the loops catch and skip),
+# which can leave the newest quarter partially fetched — exactly the case the
+# build's completeness guard then aborts on. A 404 is NOT transient (the quarter
+# simply isn't published yet), so it returns immediately without retrying.
+_MAX_ATTEMPTS = 4       # tries per area-quarter before giving up
+_BACKOFF_BASE = 1.0     # seconds; doubles each retry
+
+
+def _get_csv(url: str, timeout: int = 30) -> requests.Response | None:
+    """GET a BLS CSV URL, retrying transient failures with exponential backoff.
+
+    Returns the 200 response, or None if the quarter isn't published (404) or
+    every attempt failed (so the caller skips that area-quarter). 429s honor a
+    numeric ``Retry-After``; network errors and 5xx get exponential backoff.
+    """
+    delay = _BACKOFF_BASE
+    for attempt in range(_MAX_ATTEMPTS):
+        try:
+            resp = requests.get(url, timeout=timeout)
+        except Exception:
+            wait = delay
+        else:
+            if resp.status_code == 200:
+                return resp
+            if resp.status_code == 404:
+                return None  # quarter not published yet — expected, do not retry
+            retry_after = (resp.headers.get("Retry-After") or "").strip()
+            wait = (
+                float(retry_after)
+                if resp.status_code == 429 and retry_after.isdigit()
+                else delay
+            )
+        if attempt < _MAX_ATTEMPTS - 1:
+            time.sleep(wait)
+            delay *= 2
+    return None
 
 
 def _fetch_from_bls() -> pd.DataFrame:
@@ -47,14 +86,11 @@ def _fetch_from_bls() -> pd.DataFrame:
         for year in YEARS:
             for qtr in QUARTERS:
                 url = BLS_BASE_URL.format(year=year, quarter=qtr, fips=fips)
-                try:
-                    resp = requests.get(url, timeout=30)
-                    if resp.status_code == 200:
-                        df = pd.read_csv(io.StringIO(resp.text))
-                        df["county_name"] = COUNTIES[fips]
-                        frames.append(df)
-                except Exception:
-                    pass
+                resp = _get_csv(url, timeout=30)
+                if resp is not None:
+                    df = pd.read_csv(io.StringIO(resp.text))
+                    df["county_name"] = COUNTIES[fips]
+                    frames.append(df)
                 done += 1
                 if use_st:
                     progress.progress(done / total,
@@ -150,17 +186,14 @@ def _fetch_national_from_bls() -> pd.DataFrame:
     for year in YEARS:
         for qtr in QUARTERS:
             url = BLS_BASE_URL.format(year=year, quarter=qtr, fips="US000")
-            try:
-                resp = requests.get(url, timeout=60)  # larger timeout — file is bigger
-                if resp.status_code == 200:
-                    df = pd.read_csv(io.StringIO(resp.text))
-                    df = df[
-                        ((df["own_code"] == 0) & (df["agglvl_code"] == AGGLVL_US_TOTAL))
-                        | ((df["own_code"] == 5) & (df["agglvl_code"] == AGGLVL_US_BY_OWN))
-                    ]
-                    frames.append(df)
-            except Exception:
-                pass
+            resp = _get_csv(url, timeout=60)  # larger timeout — file is bigger
+            if resp is not None:
+                df = pd.read_csv(io.StringIO(resp.text))
+                df = df[
+                    ((df["own_code"] == 0) & (df["agglvl_code"] == AGGLVL_US_TOTAL))
+                    | ((df["own_code"] == 5) & (df["agglvl_code"] == AGGLVL_US_BY_OWN))
+                ]
+                frames.append(df)
             done += 1
             if use_st:
                 progress.progress(done / total,

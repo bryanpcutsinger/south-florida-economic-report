@@ -107,6 +107,30 @@ def get_latest_quarter(df: pd.DataFrame) -> pd.DataFrame:
     return df[df["date"] == max_date]
 
 
+def missing_counties_in_latest_quarter(df: pd.DataFrame, expected) -> list:
+    """Counties absent from the newest total-covered quarter.
+
+    Validates the slice the KPI cards and trend charts actually consume —
+    total covered (own_code=0), not industry-level rows — so a county that
+    has, say, NAICS-sector rows for the newest quarter but is missing its
+    total-covered row is correctly reported as missing. Takes the most recent
+    total-covered quarter and returns which of `expected` county names have no
+    total-covered row there. An empty list means the newest published quarter
+    is complete for every expected county; if there is no total-covered data
+    at all, every expected county is reported missing.
+
+    Used by build.py to abort (and preserve last-good published output) rather
+    than publish a partially-fetched newest quarter.
+    """
+    expected = list(expected)
+    totals = get_total_covered(df)
+    if totals.empty:
+        return expected
+    latest = get_latest_quarter(totals)
+    present = set(latest["county_name"].unique())
+    return [c for c in expected if c not in present]
+
+
 def get_growth_quadrant_data(df: pd.DataFrame) -> pd.DataFrame:
     """Latest-quarter NAICS sectors with valid YoY employment + wage growth rates."""
     sectors = get_latest_quarter(get_naics_sectors(df, own_code=5))

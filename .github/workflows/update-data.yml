@@ -24,6 +24,14 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements-build.txt
 
+      # Force a fresh BLS/FRED/IRS fetch every run. The cache is gitignored and
+      # the runner is ephemeral, so this is a no-op today — but it makes the
+      # "always fetch fresh" guarantee explicit instead of an accident of CI
+      # state, so a newly released QCEW quarter can never be masked by a stale
+      # cache if persistent caching is ever introduced.
+      - name: Clear stale data caches
+        run: rm -f data/cache/*.parquet
+
       - name: Build static dashboard
         env:
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}

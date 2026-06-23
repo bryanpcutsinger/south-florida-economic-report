@@ -19,9 +19,10 @@ from pathlib import Path
 import pandas as pd
 import plotly.graph_objects as go
 
-from data.fetch import fetch_all_data
+from data.fetch import fetch_all_data, CACHE_FILE
 from data.clean import (
     clean, get_total_covered, get_latest_quarter, get_growth_quadrant_data,
+    missing_counties_in_latest_quarter,
 )
 from data.analysis import deseasonalize_trend, project_trend, periods_to_current_quarter
 from components.growth_quadrant import (
@@ -914,6 +915,55 @@ if __name__ == "__main__":
 
     df = clean(raw)
     print(f"  {len(df):,} rows for {df['county_name'].nunique()} counties")
+
+    # Report the newest published quarter and which counties reached it, then
+    # guard against publishing a partially-fetched quarter. The fetcher silently
+    # skips any failed request (404 OR a transient network error), so a mid-fetch
+    # blip on one county would otherwise advance the badge to a quarter that only
+    # some counties have. Check the total-covered slice the KPIs/charts use.
+    totals_latest = get_latest_quarter(get_total_covered(df))
+    if totals_latest.empty:
+        print("ERROR: No total-covered data found. Aborting without writing.")
+        sys.exit(1)
+    latest_year = int(totals_latest["year"].iloc[0])
+    latest_qtr = int(totals_latest["qtr"].iloc[0])
+    present = set(totals_latest["county_name"].unique())
+    marks = " — ".join(
+        f"{c}: {'✓' if c in present else '✗'}" for c in COUNTY_ORDER
+    )
+    print(f"  Latest quarter: {latest_year} Q{latest_qtr} — {marks}")
+
+    # Soft staleness warning: QCEW runs roughly a two-quarter lag, so a latest
+    # quarter further behind than that hints at an all-counties fetch failure
+    # (which would silently republish stale data). Warn, never abort — a quarter
+    # that BLS genuinely hasn't released yet must not break the build.
+    quarters_behind = (
+        pd.Timestamp.today().to_period("Q")
+        - pd.Period(year=latest_year, quarter=latest_qtr, freq="Q")
+    ).n
+    if quarters_behind > 2:
+        print(
+            f"  WARNING: latest quarter is {quarters_behind} quarters behind the "
+            "current calendar quarter — newer QCEW data may have failed to fetch."
+        )
+
+    missing = missing_counties_in_latest_quarter(df, COUNTY_ORDER)
+    if missing:
+        # Partial newest quarter — almost always a transient fetch failure (QCEW
+        # releases all areas at once). Abort BEFORE writing so the Action's commit
+        # step is skipped and the last fully-published quarter stays live. Also
+        # drop the just-written parquet cache: fetch_all_data() saves before this
+        # guard runs, so a local rerun would otherwise reload the partial cache
+        # instead of refetching. CI has no persistent cache, so this only matters
+        # for local builds — but it's cheap insurance.
+        print(
+            f"ERROR: {latest_year} Q{latest_qtr} is missing total-covered data for "
+            f"{', '.join(missing)}. This looks like a partial fetch, not a real "
+            "release. Aborting without writing so the currently published quarter "
+            "is preserved rather than overwritten with an incomplete one."
+        )
+        CACHE_FILE.unlink(missing_ok=True)
+        sys.exit(1)
 
     # Guard the secondary KPI row. When a FRED key IS configured, an empty GDP
     # or unemployment fetch means a real failure (e.g. a 429 rate limit), not an
