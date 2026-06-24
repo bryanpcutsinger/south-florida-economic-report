@@ -9,7 +9,7 @@ import pandas as pd
 from data.analysis import deseasonalize_trend, project_trend, periods_to_current_quarter
 from data.clean import get_total_covered
 from data.constants import COUNTY_COLORS, FAU_BLUE, FAU_SKY_BLUE
-from utils.formatting import fmt_currency
+from utils.formatting import fmt_currency, fmt_quarter_label
 from utils.narratives import narrate_employment_trends, source_citation
 
 METHODOLOGY_NOTE = (
@@ -52,7 +52,7 @@ def _build_chart(
     projection = project_trend(trend, periods=periods, lookback=4, log_transform=log_transform)
 
     hovertemplate = (
-        "%{customdata}<br>%{fullData.name}: " + hover_prefix + "%{y:,.0f}<extra></extra>"
+        "%{customdata}<br>" + hover_prefix + "%{y:,.0f}<extra></extra>"
     )
 
     fig = go.Figure()
@@ -72,9 +72,10 @@ def _build_chart(
         last_trend_y = trend.dropna().iloc[-1]
         proj_x = [last_trend_x] + list(projection.index)
         proj_y = [last_trend_y] + list(projection.values)
-        proj_labels = ["Latest trend"] + [
-            f"{d.year} Q{ {2:1, 5:2, 8:3, 11:4}[d.month] } (projected)"
-            for d in projection.index
+        # Connector point overlaps the last actual point — label it with that
+        # actual quarter so a boundary hover reads consistently (not "Latest trend").
+        proj_labels = [str(labels.loc[last_trend_x])] + [
+            fmt_quarter_label(d, projected=True) for d in projection.index
         ]
         fig.add_trace(
             go.Scatter(
@@ -99,12 +100,12 @@ def _build_chart(
         title=dict(text=title, font=dict(size=14)),
         plot_bgcolor="white",
         paper_bgcolor="white",
-        hovermode="x unified",
+        hovermode="closest",
         height=420,
         margin=dict(t=50, b=80, l=80, r=20),
         legend=dict(orientation="h", yanchor="top", y=-0.18, x=0),
         xaxis=dict(
-            showgrid=False, title="Quarter",
+            showgrid=False, title="Quarter", tickformat="%Y Q%q",
             showline=True, linecolor="black", linewidth=2, mirror=False,
             ticks="outside", tickcolor="black", ticklen=4,
         ),

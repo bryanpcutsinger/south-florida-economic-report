@@ -34,7 +34,7 @@ from data.constants import (
     FAU_BLUE, FAU_RED, FAU_DARK_GRAY, FAU_GRAY,
     FAU_ELECTRIC_BLUE, FAU_SKY_BLUE, COUNTY_COLORS,
 )
-from utils.formatting import fmt_number, fmt_currency, fmt_pct
+from utils.formatting import fmt_number, fmt_currency, fmt_pct, fmt_quarter_label
 from utils.narratives import narrate_employment_trends, format_industry_list
 
 DOCS_DIR = Path(__file__).parent / "docs"
@@ -463,7 +463,7 @@ def _trends_chart(totals, y_col, title, color, tickformat, hover_prefix, log_tra
     ).reindex(indexed.index)
 
     hovertemplate = (
-        "%{customdata}<br>%{fullData.name}: " + hover_prefix + "%{y:,.0f}<extra></extra>"
+        "%{customdata}<br>" + hover_prefix + "%{y:,.0f}<extra></extra>"
     )
 
     trend_observed = trend.dropna()
@@ -484,9 +484,10 @@ def _trends_chart(totals, y_col, title, color, tickformat, hover_prefix, log_tra
         last_trend_y = trend.dropna().iloc[-1]
         proj_x = [last_trend_x] + list(projection.index)
         proj_y = [last_trend_y] + list(projection.values)
-        proj_labels = ["Latest trend"] + [
-            f"{d.year} Q{ {2:1, 5:2, 8:3, 11:4}[d.month] } (projected)"
-            for d in projection.index
+        # Connector point overlaps the last actual point — label it with that
+        # actual quarter so a boundary hover reads consistently (not "Latest trend").
+        proj_labels = [str(labels.loc[last_trend_x])] + [
+            fmt_quarter_label(d, projected=True) for d in projection.index
         ]
         fig.add_trace(go.Scatter(
             x=proj_x, y=proj_y, customdata=proj_labels,
@@ -507,11 +508,11 @@ def _trends_chart(totals, y_col, title, color, tickformat, hover_prefix, log_tra
     fig.update_layout(
         title=dict(text=title, font=dict(size=14)),
         plot_bgcolor="white", paper_bgcolor="white",
-        hovermode="x unified", height=440,
+        hovermode="closest", height=440,
         margin=dict(t=50, b=90, l=100, r=20),
         legend=dict(orientation="h", yanchor="top", y=-0.22, x=0),
         xaxis=dict(
-            showgrid=False,
+            showgrid=False, tickformat="%Y Q%q",
             title=dict(text="Quarter", standoff=15),
             showline=True, linecolor="black", linewidth=2, mirror=False,
             ticks="outside", tickcolor="black", ticklen=4,
