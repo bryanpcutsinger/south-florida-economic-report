@@ -2,9 +2,11 @@
 
 *Canonical embedding guide. Linked from the [root README](../../README.md).*
 
-These pages are self-contained HTML embeds intended to be dropped into the FAU website via `<iframe>`. Each embed mirrors one section of the live dashboard at https://bryanpcutsinger.github.io/south-florida-economic-report/ and is rebuilt automatically every Monday morning by a GitHub Action — no manual refresh needed on either end.
+These pages are self-contained HTML embeds intended to be dropped into the FAU website via `<iframe>`. Each embed mirrors one section of the live dashboard at https://bryancutsinger.com/south-florida-economic-report/ and is rebuilt automatically every Monday morning by a GitHub Action — no manual refresh needed on either end.
 
-Base URL: `https://bryanpcutsinger.github.io/south-florida-economic-report/embeds/`
+Base URL: `https://bryancutsinger.com/south-florida-economic-report/embeds/`
+
+> **Domain change (July 2026):** the site moved from `bryanpcutsinger.github.io` to the custom domain `bryancutsinger.com` (all GitHub Pages projects under the account moved with it). Old `bryanpcutsinger.github.io/...` URLs 301-redirect to the new domain, so legacy iframes still *load* — but the resize listener's origin check (below) must match the **new** domain or auto-sizing silently breaks. Use only `bryancutsinger.com` URLs going forward.
 
 ## Available Embeds
 
@@ -41,7 +43,7 @@ Add this script tag anywhere on the FAU page that hosts these iframes. It listen
 ```html
 <script>
 window.addEventListener('message', function(e) {
-  if (e.origin !== 'https://bryanpcutsinger.github.io') return;
+  if (e.origin !== 'https://bryancutsinger.com') return;
   if (!e.data || e.data.type !== 'sfer-resize') return;
   document.querySelectorAll('iframe.sfer-embed').forEach(function(f) {
     if (f.contentWindow === e.source) f.style.height = e.data.height + 'px';
@@ -50,7 +52,7 @@ window.addEventListener('message', function(e) {
 </script>
 ```
 
-The origin check ensures only messages from our GitHub Pages domain trigger resizing. The `iframe.sfer-embed` class selector means the listener only resizes iframes you've explicitly opted in (so it won't interfere with other iframes on the page).
+The origin check ensures only messages from our domain trigger resizing. The `iframe.sfer-embed` class selector means the listener only resizes iframes you've explicitly opted in (so it won't interfere with other iframes on the page).
 
 ### 2. Paste an iframe for each embed you want
 
@@ -58,7 +60,7 @@ The `class="sfer-embed"` is what hooks the iframe into the resize listener above
 
 ```html
 <iframe class="sfer-embed"
-        src="https://bryanpcutsinger.github.io/south-florida-economic-report/embeds/kpi-cards.html"
+        src="https://bryancutsinger.com/south-florida-economic-report/embeds/kpi-cards.html"
         style="width:100%; border:0;"
         height="380"
         title="South Florida Regional Snapshot"></iframe>
@@ -68,7 +70,7 @@ To embed a chart, change `src` and the `title` (which screen readers read aloud)
 
 ```html
 <iframe class="sfer-embed"
-        src="https://bryanpcutsinger.github.io/south-florida-economic-report/embeds/palm-beach/trends.html"
+        src="https://bryancutsinger.com/south-florida-economic-report/embeds/palm-beach/trends.html"
         style="width:100%; border:0;"
         height="600"
         title="Palm Beach County employment and salary trends, 2014 to present"></iframe>
@@ -91,7 +93,7 @@ GitHub Pages sends `cache-control: max-age=600`, so individual users may see a 1
 
 ## Troubleshooting
 
-- **Iframe shows a scrollbar / doesn't grow:** the listener snippet above is missing or the origin check is failing. Open the browser's developer console; if you see messages like `Refused to display ...`, FAU's Content-Security-Policy is blocking the embed and IT needs to allow `https://bryanpcutsinger.github.io` in the page's `frame-src` directive.
+- **Iframe shows a scrollbar / doesn't grow:** the listener snippet above is missing or the origin check is failing — in particular, a listener still checking for the pre-2026 `https://bryanpcutsinger.github.io` origin will never fire (see the domain-change note at the top). Open the browser's developer console; if you see messages like `Refused to display ...`, FAU's Content-Security-Policy is blocking the embed and IT needs to allow `https://bryancutsinger.com` in the page's `frame-src` directive.
 - **Charts render at the wrong width:** the iframe is narrower than the recommended minimum. Either widen the column, or accept the overlap on small screens (the embed already stacks its multi-chart layouts vertically below 768 px).
 - **All embeds blank / 404:** the GitHub Action failed its last Monday run. Check https://github.com/bryanpcutsinger/south-florida-economic-report/actions for red workflows.
 

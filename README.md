@@ -1,11 +1,11 @@
 # South Florida Regional Economic Report
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Live dashboard](https://img.shields.io/badge/dashboard-live-success)](https://bryanpcutsinger.github.io/south-florida-economic-report/)
+[![Live dashboard](https://img.shields.io/badge/dashboard-live-success)](https://bryancutsinger.com/south-florida-economic-report/)
 
 An interactive dashboard tracking employment, wages, firm formation, and industry composition across Palm Beach, Broward, and Miami-Dade counties.
 
-**Live dashboard:** https://bryanpcutsinger.github.io/south-florida-economic-report/
+**Live dashboard:** https://bryancutsinger.com/south-florida-economic-report/
 
 ## What it is
 

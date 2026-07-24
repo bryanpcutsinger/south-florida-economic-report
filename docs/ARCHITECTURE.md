@@ -2,7 +2,7 @@
 
 *Internal architecture reference for the project. New users should start at the [root README](../README.md); this file documents internals for anyone modifying the code.*
 
-Live dashboard: https://bryanpcutsinger.github.io/south-florida-economic-report/
+Live dashboard: https://bryancutsinger.com/south-florida-economic-report/ *(moved July 2026 from `bryanpcutsinger.github.io` when the custom domain was added to the account's user site; old URLs 301-redirect — see `docs/embeds/README.md` for iframe implications)*
 
 ## What this is
 
